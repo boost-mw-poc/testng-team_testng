@@ -14,6 +14,8 @@ import java.util.Objects;
 import java.util.Set;
 import org.jspecify.annotations.Nullable;
 import org.testng.ITestNGMethod;
+import org.testng.TestNGException;
+import org.testng.internal.collections.Pair;
 
 public class MethodInheritance {
 
@@ -117,24 +119,16 @@ public class MethodInheritance {
       }
     }
 
-    //
-    // Each bucket that has a list bigger than one element gets sorted
-    //
-    map.values()
-        .parallelStream()
+    // Collect candidate inheritance edges from a snapshot of the explicit graph, then apply
+    // them sequentially with cycle detection. Hierarchy buckets used to be processed with
+    // parallelStream while canReach read edges another bucket was mutating, so two independent
+    // hierarchies could each see a safe edge and together form a cycle.
+    List<Pair<ITestNGMethod, ITestNGMethod>> candidates = new ArrayList<>();
+    map.values().stream()
         .filter(l -> l.size() > 1)
         .forEach(
             l -> {
-              // Sort them
               sortMethodsByInheritance(l, before);
-
-              /*
-               *  Set methodDependedUpon accordingly
-               *  E.g. Base class can have multiple @BeforeClass methods. Need to ensure
-               *  that @BeforeClass methods in derived class depend on all @BeforeClass methods
-               *  of base class. Vice versa for @AfterXXX methods
-               */
-
               for (int i = 0; i < l.size() - 1; i++) {
                 ITestNGMethod m1 = l.get(i);
                 for (int j = i + 1; j < l.size(); j++) {
@@ -155,12 +149,25 @@ public class MethodInheritance {
                   if (shouldConsider
                       && !dependencyExists(m1, m2, methods)
                       && (neitherDependsOnGroups || eitherOutsideGroupGraph)) {
-                    Utils.log("MethodInheritance", 4, m2 + " DEPENDS ON " + m1);
-                    m2.addMethodDependedUpon(MethodHelper.calculateMethodCanonicalName(m1));
+                    candidates.add(Pair.of(m2, m1));
                   }
                 }
               }
             });
+
+    candidates.sort(
+        Comparator.comparing(
+                (Pair<ITestNGMethod, ITestNGMethod> edge) ->
+                    MethodHelper.calculateMethodCanonicalName(edge.first()))
+            .thenComparing(edge -> MethodHelper.calculateMethodCanonicalName(edge.second())));
+    for (Pair<ITestNGMethod, ITestNGMethod> edge : candidates) {
+      ITestNGMethod m2 = edge.first();
+      ITestNGMethod m1 = edge.second();
+      if (!dependencyExists(m1, m2, methods)) {
+        Utils.log("MethodInheritance", 4, m2 + " DEPENDS ON " + m1);
+        m2.addMethodDependedUpon(MethodHelper.calculateMethodCanonicalName(m1));
+      }
+    }
   }
 
   private static boolean hasNoGroupInvolvement(ITestNGMethod method) {
@@ -210,7 +217,12 @@ public class MethodInheritance {
       ITestNGMethod method, ITestNGMethod[] methods) {
     List<ITestNGMethod> dependencies = new ArrayList<>();
     if (method.getMethodsDependedUpon().length > 0) {
-      Collections.addAll(dependencies, MethodHelper.findDependedUponMethods(method, methods));
+      try {
+        Collections.addAll(dependencies, MethodHelper.findDependedUponMethods(method, methods));
+      } catch (TestNGException ignored) {
+        // Missing dependsOnMethods is reported by MethodHelper.sortMethods. Cycle detection
+        // must not replace that error by throwing from the inheritance walk.
+      }
     }
     for (String group : method.getGroupsDependedUpon()) {
       Collections.addAll(
