@@ -137,18 +137,10 @@ public class MethodInheritance {
                   boolean upstreamHierarchy = hasUpstreamHierarchy(m1, m2);
                   boolean shouldConsider =
                       before ? notEffectivelyEqual && upstreamHierarchy : notEffectivelyEqual;
-                  boolean neitherDependsOnGroups =
-                      m1.getGroupsDependedUpon().length == 0
-                          && m2.getGroupsDependedUpon().length == 0;
-                  // A method with no groups and no dependsOnGroups is outside the group graph.
-                  // Keep the inheritance edge for those (GITHUB-3239 / GITHUB-2714) without
-                  // coupling methods that already participate in a group pipeline (GITHUB-2432).
-                  boolean eitherOutsideGroupGraph =
-                      hasNoGroupInvolvement(m1) || hasNoGroupInvolvement(m2);
-
-                  if (shouldConsider
-                      && !dependencyExists(m1, m2, methods)
-                      && (neitherDependsOnGroups || eitherOutsideGroupGraph)) {
+                  // The explicit dependency graph decides whether a soft inheritance edge is
+                  // safe. Local groups / dependsOnGroups presence used to drop a valid
+                  // constraint when the child only had an unrelated groups= value.
+                  if (shouldConsider && !dependencyExists(m1, m2, methods)) {
                     candidates.add(Pair.of(m2, m1));
                   }
                 }
@@ -168,10 +160,6 @@ public class MethodInheritance {
         m2.addMethodDependedUpon(MethodHelper.calculateMethodCanonicalName(m1));
       }
     }
-  }
-
-  private static boolean hasNoGroupInvolvement(ITestNGMethod method) {
-    return method.getGroups().length == 0 && method.getGroupsDependedUpon().length == 0;
   }
 
   private static boolean hasUpstreamHierarchy(ITestNGMethod m1, ITestNGMethod m2) {

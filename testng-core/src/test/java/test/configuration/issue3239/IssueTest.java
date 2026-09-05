@@ -74,4 +74,68 @@ public class IssueTest extends SimpleBaseTest {
   public void missingDependsOnMethodsStillFailsFromInheritanceWalk() {
     run(MissingDependsChild.class);
   }
+
+  @Test
+  public void beforeClassInheritanceSurvivesUnrelatedChildGroups() {
+    InvokedMethodNameListener listener = run(UnrelatedGroupsChild.class);
+
+    assertThat(listener.getInvokedMethodNames())
+        .containsExactly("zSetup", "ySetup", "thisSetup", "test");
+  }
+
+  @Test
+  public void afterMethodInheritanceSurvivesUnrelatedChildGroups() {
+    InvokedMethodNameListener listener = run(AfterUnrelatedGroupsChild.class);
+
+    assertThat(listener.getInvokedMethodNames())
+        .containsExactly(
+            "beforeMethod", "beforeChildMethod", "testCase", "afterChildMethod", "afterMethod");
+  }
+
+  @Test
+  public void alignedHardDependencyKeepsInheritanceOrder() {
+    InvokedMethodNameListener listener = run(AlignedHardDepChild.class);
+
+    assertThat(listener.getInvokedMethodNames()).containsExactly("baseSetup", "childSetup", "test");
+  }
+
+  @Test
+  public void oppositeHardDependencyWinsWithoutCycle() {
+    InvokedMethodNameListener listener = run(OppositeHardDepChild.class);
+
+    assertThat(listener.getInvokedMethodNames()).containsExactly("childSetup", "baseSetup", "test");
+  }
+
+  @Test
+  public void threeLevelInheritanceSelectivelyRejectsCyclingEdges() {
+    InvokedMethodNameListener listener = run(ThreeLevelChild.class);
+
+    assertThat(listener.getInvokedMethodNames())
+        .containsExactly("gpSetup", "childAgnostic", "childInG", "parentSetup", "test");
+  }
+
+  @Test
+  public void regexpDependsOnGroupsUsesSameMatchingAsExecutionGraph() {
+    InvokedMethodNameListener listener = run(RegexpGroupsChild.class);
+
+    assertThat(listener.getInvokedMethodNames())
+        .containsExactly("baseSetup", "childSetup", "baseAfter", "test");
+  }
+
+  @Test
+  public void twoHierarchiesDoNotFormACycleOnAfterSuite() {
+    InvokedMethodNameListener listener = run(AfterSuiteAChild.class, AfterSuiteBChild.class);
+
+    assertThat(listener.getInvokedMethodNames())
+        .containsExactly(
+            "testA", "testB", "childA", "childAGroup", "childB", "childBGroup", "baseA", "baseB");
+  }
+
+  @Test
+  public void missingDependsOnGroupsKeepsExistingErrorBehavior() {
+    InvokedMethodNameListener listener = run(MissingGroupsChild.class);
+
+    assertThat(listener.getInvokedMethodNames())
+        .containsExactly("baseSetup", "childAgnostic", "test");
+  }
 }
