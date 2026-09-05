@@ -1,16 +1,21 @@
 package org.testng.internal;
 
+import java.util.ArrayDeque;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.Deque;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Objects;
+import java.util.Set;
 import org.jspecify.annotations.Nullable;
 import org.testng.ITestNGMethod;
+import org.testng.TestNGException;
+import org.testng.internal.collections.Pair;
 
 public class MethodInheritance {
 
@@ -114,24 +119,16 @@ public class MethodInheritance {
       }
     }
 
-    //
-    // Each bucket that has a list bigger than one element gets sorted
-    //
-    map.values()
-        .parallelStream()
+    // Collect candidate inheritance edges from a snapshot of the explicit graph, then apply
+    // them sequentially with cycle detection. Hierarchy buckets used to be processed with
+    // parallelStream while canReach read edges another bucket was mutating, so two independent
+    // hierarchies could each see a safe edge and together form a cycle.
+    List<Pair<ITestNGMethod, ITestNGMethod>> candidates = new ArrayList<>();
+    map.values().stream()
         .filter(l -> l.size() > 1)
         .forEach(
             l -> {
-              // Sort them
               sortMethodsByInheritance(l, before);
-
-              /*
-               *  Set methodDependedUpon accordingly
-               *  E.g. Base class can have multiple @BeforeClass methods. Need to ensure
-               *  that @BeforeClass methods in derived class depend on all @BeforeClass methods
-               *  of base class. Vice versa for @AfterXXX methods
-               */
-
               for (int i = 0; i < l.size() - 1; i++) {
                 ITestNGMethod m1 = l.get(i);
                 for (int j = i + 1; j < l.size(); j++) {
@@ -140,19 +137,29 @@ public class MethodInheritance {
                   boolean upstreamHierarchy = hasUpstreamHierarchy(m1, m2);
                   boolean shouldConsider =
                       before ? notEffectivelyEqual && upstreamHierarchy : notEffectivelyEqual;
-                  boolean hasGroupDependencies =
-                      m2.getGroupsDependedUpon().length == 0
-                          && m1.getGroupsDependedUpon().length == 0;
-
-                  if (shouldConsider
-                      && !dependencyExists(m1, m2, methods)
-                      && hasGroupDependencies) {
-                    Utils.log("MethodInheritance", 4, m2 + " DEPENDS ON " + m1);
-                    m2.addMethodDependedUpon(MethodHelper.calculateMethodCanonicalName(m1));
+                  // The explicit dependency graph decides whether a soft inheritance edge is
+                  // safe. Local groups / dependsOnGroups presence used to drop a valid
+                  // constraint when the child only had an unrelated groups= value.
+                  if (shouldConsider && !dependencyExists(m1, m2, methods)) {
+                    candidates.add(Pair.of(m2, m1));
                   }
                 }
               }
             });
+
+    candidates.sort(
+        Comparator.comparing(
+                (Pair<ITestNGMethod, ITestNGMethod> edge) ->
+                    MethodHelper.calculateMethodCanonicalName(edge.first()))
+            .thenComparing(edge -> MethodHelper.calculateMethodCanonicalName(edge.second())));
+    for (Pair<ITestNGMethod, ITestNGMethod> edge : candidates) {
+      ITestNGMethod m2 = edge.first();
+      ITestNGMethod m1 = edge.second();
+      if (!dependencyExists(m1, m2, methods)) {
+        Utils.log("MethodInheritance", 4, m2 + " DEPENDS ON " + m1);
+        m2.addMethodDependedUpon(MethodHelper.calculateMethodCanonicalName(m1));
+      }
+    }
   }
 
   private static boolean hasUpstreamHierarchy(ITestNGMethod m1, ITestNGMethod m2) {
@@ -166,28 +173,50 @@ public class MethodInheritance {
 
   private static boolean dependencyExists(
       ITestNGMethod m1, ITestNGMethod m2, ITestNGMethod[] methods) {
-    return internalDependencyExists(m1, m2, methods) || internalDependencyExists(m2, m1, methods);
+    return canReach(m1, m2, methods) || canReach(m2, m1, methods);
   }
 
-  private static boolean internalDependencyExists(
-      ITestNGMethod m1, ITestNGMethod m2, ITestNGMethod[] methods) {
-    ITestNGMethod[] methodsNamed = MethodHelper.findDependedUponMethods(m1, methods);
-
-    boolean match = Arrays.stream(methodsNamed).parallel().anyMatch(method -> method.equals(m2));
-    if (match) {
-      return true;
+  /**
+   * True when {@code target} is already a (possibly transitive) hard predecessor of {@code from}
+   * through {@code dependsOnMethods} / {@code dependsOnGroups}. A direct-only check would miss a
+   * mixed chain and let an inheritance edge close a cycle (GITHUB-2432).
+   */
+  private static boolean canReach(
+      ITestNGMethod from, ITestNGMethod target, ITestNGMethod[] methods) {
+    Deque<ITestNGMethod> stack = new ArrayDeque<>();
+    Set<ITestNGMethod> seen = new HashSet<>();
+    stack.push(from);
+    seen.add(from);
+    while (!stack.isEmpty()) {
+      ITestNGMethod current = stack.pop();
+      for (ITestNGMethod next : directDependencies(current, methods)) {
+        if (next.equals(target)) {
+          return true;
+        }
+        if (seen.add(next)) {
+          stack.push(next);
+        }
+      }
     }
+    return false;
+  }
 
-    return Arrays.stream(m1.getGroupsDependedUpon())
-        .parallel()
-        .anyMatch(
-            group -> {
-              ITestNGMethod[] methodsThatBelongToGroup =
-                  MethodGroupsHelper.findMethodsThatBelongToGroup(m1, methods, group);
-              return Arrays.stream(methodsThatBelongToGroup)
-                  .parallel()
-                  .anyMatch(method -> method.equals(m2));
-            });
+  private static List<ITestNGMethod> directDependencies(
+      ITestNGMethod method, ITestNGMethod[] methods) {
+    List<ITestNGMethod> dependencies = new ArrayList<>();
+    if (method.getMethodsDependedUpon().length > 0) {
+      try {
+        Collections.addAll(dependencies, MethodHelper.findDependedUponMethods(method, methods));
+      } catch (TestNGException ignored) {
+        // Missing dependsOnMethods is reported by MethodHelper.sortMethods. Cycle detection
+        // must not replace that error by throwing from the inheritance walk.
+      }
+    }
+    for (String group : method.getGroupsDependedUpon()) {
+      Collections.addAll(
+          dependencies, MethodGroupsHelper.findMethodsThatBelongToGroup(method, methods, group));
+    }
+    return dependencies;
   }
 
   private static boolean equalsEffectiveClass(ITestNGMethod m1, ITestNGMethod m2) {
