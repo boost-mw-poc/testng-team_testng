@@ -98,6 +98,32 @@ class ClassHelperTest {
             .isNull()
     }
 
+    @Test
+    fun availableMethodsReuseTheSameHandlesOnRepeatedLookups() {
+        val first = methodHandles(BabyPandaSample::class)
+        val second = methodHandles(BabyPandaSample::class)
+        assertThat(first.keys).isEqualTo(second.keys)
+        first.forEach { (key, method) ->
+            assertThat(second[key])
+                .withFailMessage("repeated lookup must reuse the Method handle for $key")
+                .isSameAs(method)
+        }
+    }
+
+    @Test
+    fun availableMethodsReturnsADefensiveCopy() {
+        val first = ClassHelper.getAvailableMethods(LittlePandaSample::class.java)
+        assertThat(first).isNotEmpty()
+        first.clear()
+        assertThat(ClassHelper.getAvailableMethods(LittlePandaSample::class.java)).isNotEmpty()
+    }
+
+    private fun methodHandles(type: KClass<*>): Map<String, java.lang.reflect.Method> {
+        return ClassHelper.getAvailableMethods(type.java)
+            .filter { !"\$jacocoInit".contentEquals(it.name) }
+            .associateBy { it.declaringClass.name + "." + it.name + it.parameterTypes.contentToString() }
+    }
+
     @Test(dataProvider = "data")
     fun testWithDefaultMethodsBeingOverridden(
         cls: KClass<*>, expectedCount: Int, vararg expected: String
