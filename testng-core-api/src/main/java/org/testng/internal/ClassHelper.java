@@ -12,6 +12,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BiConsumer;
 import java.util.stream.Collectors;
 import org.jspecify.annotations.Nullable;
@@ -161,14 +162,39 @@ public final class ClassHelper {
     return groups.values().stream().flatMap(Collection::stream).collect(Collectors.toSet());
   }
 
+  /**
+   * Per-class memo of {@link #getAvailableMethods(Class)}. Lives in a {@link ClassValue} so the
+   * table is discarded with the class and never pins a class loader — the same reason {@link
+   * ExecutableCache} uses ClassValue. Callers receive a defensive copy; the cached set is never
+   * mutated.
+   */
+  private static final ClassValue<Set<Method>> AVAILABLE_METHODS =
+      new ClassValue<>() {
+        @Override
+        protected Set<Method> computeValue(Class<?> type) {
+          return Set.copyOf(computeAvailableMethods(type));
+        }
+      };
+
+  /**
+   * How many times {@link #computeAvailableMethods(Class)} has run. Tests use this as the
+   * call-count regression for GITHUB-3437: a cache hit must not walk the hierarchy again.
+   */
+  static final AtomicInteger availableMethodsComputes = new AtomicInteger();
+
   /*
    * Extract all callable methods of a class and all its super (keeping in mind the Java access
    * rules).
    */
-  public static Set<Method> getAvailableMethods(Class<?> clazz) {
+  public static Set<Method> getAvailableMethods(@Nullable Class<?> clazz) {
     if (clazz == null || clazz.equals(Object.class)) {
       return new HashSet<>();
     }
+    return new HashSet<>(AVAILABLE_METHODS.get(clazz));
+  }
+
+  private static Set<Method> computeAvailableMethods(Class<?> clazz) {
+    availableMethodsComputes.incrementAndGet();
     Map<String, Set<Method>> methods = new HashMap<>();
     for (final Method declaredMethod : ReflectionHelper.getLocalMethods(clazz)) {
       appendMethod(methods, declaredMethod);
