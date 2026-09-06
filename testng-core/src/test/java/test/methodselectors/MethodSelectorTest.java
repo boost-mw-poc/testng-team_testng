@@ -8,6 +8,8 @@ import test.methodselectors.issue1985.FilteringMethodSelector;
 import test.methodselectors.issue1985.TestClassSample;
 import test.methodselectors.issue2595.Issue2595Sample;
 import test.methodselectors.issue2595.OnlyDoNothingSelector;
+import test.methodselectors.issue2927.Issue2927Sample;
+import test.methodselectors.issue2927.SnapshottingMethodSelector;
 
 public class MethodSelectorTest extends BaseTest {
 
@@ -97,6 +99,19 @@ public class MethodSelectorTest extends BaseTest {
     run();
     verifyTests("Passed", new String[] {"doNothing"}, getPassedTests());
     verifyTests("Failed", new String[] {}, getFailedTests());
+  }
+
+  @Test(description = "GITHUB-2927")
+  public void setTestMethodsReceivesTheKnownTestMethods() {
+    SnapshottingMethodSelector.reset();
+    Issue2927Sample.reset();
+    addClass(Issue2927Sample.class);
+    addMethodSelector(SnapshottingMethodSelector.class.getName(), 10);
+    run();
+    assertThat(SnapshottingMethodSelector.snapshot()).containsExactlyInAnyOrder("alpha", "beta");
+    assertThat(SnapshottingMethodSelector.receivedMethodsHaveTestClass()).isTrue();
+    assertThat(SnapshottingMethodSelector.includeMethodRanBeforeSetTestMethods()).isFalse();
+    assertThat(Issue2927Sample.beforeMethodRan()).isTrue();
   }
 
   @Test(description = "GITHUB-1985")

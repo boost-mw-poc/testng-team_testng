@@ -362,8 +362,7 @@ public class XmlMethodSelector implements IMethodSelector {
 
   @Override
   public void setTestMethods(List<ITestNGMethod> testMethods) {
-    // Caution: this variable is initialized with an empty list first and then modified
-    // externally by the caller (TestRunner#fixMethodWithClass). Ugly.
+    // Known methods for this <test>, already bound. Not the selected subset.
     m_testMethods = testMethods;
   }
 

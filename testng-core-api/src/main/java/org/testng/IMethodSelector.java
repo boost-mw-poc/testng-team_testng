@@ -23,7 +23,12 @@ public interface IMethodSelector {
    * Invoked when all the test methods are known so that the method selector can perform additional
    * work, such as adding the transitive closure of all the groups being included and depended upon.
    *
-   * @param testMethods The test methods
+   * <p>The list is the known test methods of this {@code <test>}, each already bound to its {@link
+   * ITestClass}. It is not the subset that will run after {@link #includeMethod} filtering. This
+   * callback runs before the first {@code includeMethod} invocation, including those for
+   * configuration methods.
+   *
+   * @param testMethods The known test methods
    */
   void setTestMethods(List<ITestNGMethod> testMethods);
 }
