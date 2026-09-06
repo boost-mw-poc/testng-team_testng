@@ -134,7 +134,7 @@ class TestClass extends NoOpTestClass implements ITestClass, ITestClassConfigInf
     this.testMethodFinder = testMethodFinder;
     this.annotationFinder = annotationFinder;
     initTestClassesAndInstances();
-    initMethods();
+    initTestMethods();
   }
 
   private void initTestClassesAndInstances() {
@@ -189,15 +189,24 @@ class TestClass extends NoOpTestClass implements ITestClass, ITestClassConfigInf
     IObject.cast(iClass).ifPresent(it -> it.addObject(instance));
   }
 
-  private void initMethods() {
+  private void initTestMethods() {
     Class<?> realClass = getRealClass();
     ITestNGMethod[] methods = testMethodFinder.getTestMethods(realClass, xmlTest);
     IdentifiableObject[] instances = IObject.objects(iClass, false);
     m_testMethods = createTestMethods(methods, instances);
+  }
+
+  /**
+   * Configuration filtering consults {@link IMethodSelector#includeMethod}, so it runs after {@link
+   * IMethodSelector#setTestMethods} has received the known test methods.
+   */
+  void initConfigurationMethods() {
+    IdentifiableObject[] instances = IObject.objects(iClass, false);
     if (instances.length == 0) {
       return;
     }
 
+    Class<?> realClass = getRealClass();
     // Every one of these lookups rescans the whole class hierarchy and none of them depends on the
     // instance, so look each configuration category up once for the test class and bind the
     // templates it answers to each instance in turn. A @Factory used to pay for all ten of them

@@ -484,10 +484,8 @@ public class TestRunner
     ITestMethodFinder testMethodFinder =
         new TestNGMethodFinder(m_objectFactory, m_runInfo, m_annotationFinder, comparator);
 
-    m_runInfo.setTestMethods(testMethods);
-
     //
-    // Initialize TestClasses
+    // Initialize TestClasses (test methods only)
     //
     IClass[] classes = m_testClassFinder.findTestClasses();
 
@@ -506,6 +504,17 @@ public class TestRunner
       m_classMap.put(ic.getRealClass(), tc);
     }
 
+    // Discover and bind test methods, tell selectors, then filter configuration.
+    for (ITestClass tc : m_classMap.values()) {
+      fixMethodsWithClass(tc.getTestMethods(), tc, testMethods);
+    }
+    m_runInfo.setTestMethods(testMethods);
+    for (ITestClass tc : m_classMap.values()) {
+      if (tc instanceof TestClass) {
+        ((TestClass) tc).initConfigurationMethods();
+      }
+    }
+
     //
     // Calculate groups methods
     //
@@ -520,7 +529,6 @@ public class TestRunner
     //
 
     for (ITestClass tc : m_classMap.values()) {
-      fixMethodsWithClass(tc.getTestMethods(), tc, testMethods);
       fixMethodsWithClass(beforeClassConfigMethods(tc), tc, beforeClassMethods);
       fixMethodsWithClass(tc.getBeforeTestMethods(), tc, null);
       fixMethodsWithClass(tc.getAfterTestMethods(), tc, null);

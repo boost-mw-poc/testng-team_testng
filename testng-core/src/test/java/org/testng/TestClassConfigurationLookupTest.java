@@ -210,14 +210,17 @@ public class TestClassConfigurationLookupTest {
   }
 
   private TestClass newTestClass(ITestMethodFinder finder, FakeClass fakeClass) {
-    return new TestClass(
-        objectFactory,
-        fakeClass,
-        finder,
-        annotationFinder,
-        xmlTest,
-        Collections.singletonList(xmlClass),
-        null);
+    TestClass testClass =
+        new TestClass(
+            objectFactory,
+            fakeClass,
+            finder,
+            annotationFinder,
+            xmlTest,
+            Collections.singletonList(xmlClass),
+            null);
+    testClass.initConfigurationMethods();
+    return testClass;
   }
 
   /**

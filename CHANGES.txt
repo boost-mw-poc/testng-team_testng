@@ -1,4 +1,5 @@
 Current (7.13.0)
+Fixed: GITHUB-2927: IMethodSelector.setTestMethods now receives the known test methods after they are bound to their ITestClass, and before selectors are consulted for test or configuration methods. A selector that snapshots the list sees the methods; includeMethod is never called first. (Burak Kalaycı)
 Fixed: GITHUB-3437: ClassHelper.getAvailableMethods now memoizes the hierarchy scan per class in a ClassValue, so data-provider and configuration lookups no longer rescan the same class on every call. Callers still receive a fresh set (Burak Kalaycı)
 Fixed: GITHUB-3239, GITHUB-2714: configuration-method inheritance is kept whenever the explicit dependency graph has no path between the two methods. A child @BeforeClass no longer runs between two base methods, including when it only has an unrelated groups= value, and a base @AfterMethod no longer runs before the child's. An inheritance edge is omitted when it would close a cycle with an existing dependsOnGroups or dependsOnMethods chain (Burak Kalaycı)
 Fixed: GITHUB-2333: skip module-info.class and META-INF/versions entries when discovering classes in a test jar (Burak Kalaycı)
